@@ -65,6 +65,9 @@ param(
 
     [switch]$AlignRight,
 
+    [ValidateRange(0, 3000)]
+    [int]$SlideMs = 0,
+
     [switch]$DryRun,
 
     [string]$Title = 'Cortico'
@@ -223,14 +226,33 @@ $TOP = [IntPtr](-1)
 $NOACTIVATE = 0x0010
 $NOSIZE = 0x0001
 
-# Step 1 - drop the window's origin on the target display at once, tiny in the
-# request. This is what makes Windows hand the window its new DPI scale.
-[void][Fishway]::SetWindowPos($pet, $TOP, $d.x, $d.y, 1, 1, $NOACTIVATE)
-Start-Sleep -Milliseconds 400
+# -SlideMs > 0 glides instead of jumping: the window is transparent and draws only
+# the pet, so moving it in small steps reads as the pet sliding to the next display.
+if ($SlideMs -gt 0) {
+    $fromX = $rect.L; $fromY = $rect.T
+    $toX = $d.x; $toY = $d.y
+    $steps = [int][math]::Max(10, [math]::Round([math]::Abs($toX - $fromX) / 120))
+    $stepMs = [int][math]::Max(10, [math]::Round($SlideMs / $steps))
+    for ($s = 1; $s -le $steps; $s++) {
+        $t = $s / $steps
+        $e = $t * $t * (3 - 2 * $t)   # ease in and out
+        $nx = [int][math]::Round($fromX + ($toX - $fromX) * $e)
+        $ny = [int][math]::Round($fromY + ($toY - $fromY) * $e)
+        [void][Fishway]::SetWindowPos($pet, $TOP, $nx, $ny, 0, 0, ($NOACTIVATE -bor $NOSIZE))
+        Start-Sleep -Milliseconds $stepMs
+    }
+    Start-Sleep -Milliseconds 150
+}
+else {
+    # Step 1 - drop the window's origin on the target display at once, tiny in the
+    # request. This is what makes Windows hand the window its new DPI scale.
+    [void][Fishway]::SetWindowPos($pet, $TOP, $d.x, $d.y, 1, 1, $NOACTIVATE)
+    Start-Sleep -Milliseconds 400
+}
 
 # Step 2 - position only, keeping whatever size the window has now. Sent twice:
 # a correction that arrives before the DPI change lands gets overwritten by it.
-for ($try = 1; $try -le 3; $try++) {
+for ($try = 1; $try -le 4; $try++) {
     [void][Fishway]::SetWindowPos($pet, $TOP, $d.x, $d.y, 0, 0, ($NOACTIVATE -bor $NOSIZE))
     Start-Sleep -Milliseconds 250
     [void][Fishway]::GetWindowRect($pet, [ref]$rect)
