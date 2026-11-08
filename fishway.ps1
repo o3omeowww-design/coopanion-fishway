@@ -1,4 +1,4 @@
-#requires -version 5.1
+﻿#requires -version 5.1
 <#
 .SYNOPSIS
     Move the Coopanion desktop pet ("Cortico") window to another display.
@@ -60,6 +60,10 @@ param(
 
     [Parameter(ParameterSetName = 'Info')]
     [switch]$List,
+
+    [switch]$AlignLeft,
+
+    [switch]$AlignRight,
 
     [switch]$DryRun,
 
@@ -203,7 +207,7 @@ else {
     exit 0
 }
 
-if ($target -eq $current) { Show-State $current; 'already there.'; exit 0 }
+if ($target -eq $current -and -not ($AlignLeft -or $AlignRight)) { Show-State $current; 'already there.'; exit 0 }
 
 $d = $displays[$target]
 
@@ -235,6 +239,24 @@ for ($try = 1; $try -le 3; $try++) {
 
 $ww = $rect.R - $rect.L
 $wh = $rect.B - $rect.T
+
+# Step 3 (optional) - line the window up so the pet's own walking limit lands on
+# the display edge. The pet can only walk to 5%..95% of its window, and the window is
+# not the same width as the display, so without this it stops short of (or runs past)
+# the edge and the hop between displays shows a gap.
+if ($AlignLeft -or $AlignRight) {
+    $nx = $d.x
+    if ($AlignLeft) { $nx = $d.x - [int][math]::Round(0.05 * $ww) }
+    if ($AlignRight) { $nx = $d.x + $d.w - [int][math]::Round(0.95 * $ww) }
+    [void][Fishway]::SetWindowPos($pet, $TOP, $nx, $d.y, 0, 0, ($NOACTIVATE -bor $NOSIZE))
+    Start-Sleep -Milliseconds 250
+    [void][Fishway]::GetWindowRect($pet, [ref]$rect)
+    $ww = $rect.R - $rect.L
+    $wh = $rect.B - $rect.T
+    $edge = if ($AlignLeft) { 'left' } else { 'right' }
+    $limit = if ($AlignLeft) { '5%' } else { '95%' }
+    'aligned {0}: window x {1} - the pet''s {2} limit now sits on the {3} edge of display {4}.' -f $edge, $nx, $limit, $edge, ($target + 1)
+}
 
 Show-State $target
 'moved to display {0}.' -f ($target + 1)
